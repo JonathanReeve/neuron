@@ -1,0 +1,9 @@
+#+title: Test
+#+roam_alias: testing
+#+roam_tags: test
+
+Here is my first page.
+
+* Test
+
+[[file:new.org][new]]
