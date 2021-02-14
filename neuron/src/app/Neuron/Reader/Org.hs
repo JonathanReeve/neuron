@@ -73,27 +73,44 @@ parseOrg filePath s = do
   meta <- extractMetadata doc filePath
   pure (meta, doc)
 
+-- | Extract metadata from an org-roam file.
+-- The vanilla Org reader reads headline properties, but the standard org-roam
+-- way is to have all the metadata at the top of the file. For example:
+--
+-- > #+title: Niklas Luhmann
+-- > #+roam_alias: Luhmann
+-- > #+roam_tags: notes "zettelkasten stuff"
+-- >
+-- > Niklas Luhmann was a German sociologist who wrote over 70 books.
 extractMetadata :: Pandoc -> Either ZettelParseError (Maybe Meta)
 extractMetadata doc filePath = case doc of
   Meta meta [Block block] -> do
     let title = parseTitle meta
-        date = parseDate filePath
-        slug = parseSlug filePath
+        (date, slug) = parseDate filePath
         tags = parseTags blocks
         -- TODO?
         unlisted = False
     pure $ Just Meta {..}
   _ -> pure Nothing
 
--- Org-roam dates are stored in the filename.
--- They have the form: 20210102133406 which is 2021-01-02, 13:34:06
-parseDate :: FilePath -> Maybe DateMayTime
-parseDate fp = case splitOn "-" fp of
-  date : slug | length date == 14 -> fp -- TODO
-  _ -> Nothing
+-- Pandoc understands @#+title@ blocks, so we need only get this from the Pandoc structure.
+parseTitle :: Pandoc -> Title
+parseTitle doc = -- TODO
 
-parseSlug fp :: FilePath -> Slug
-parseSlug fp = fp -- TODO
+-- An org-roam filename can be either: @20210102133406-some-slug.org@ or
+-- @some-slug.org@. Let's try to extract the slug and the date from them.
+parseFilePath :: FilePath -> (Maybe DateMayTime, Maybe Slug)
+parseFilePath fp = case splitOn "-" fp of
+  -- Org-roam dates are stored in the filename.
+  -- They have the form: 20210102133406 which is 2021-01-02, 13:34:06
+  date : slug | length date == 14 && all isDigit date -> do
+                  let y = take 4 date
+                      m = (take 2 . drop 4) date
+                      d = (take 2 . drop 6) date
+                      date = iso8601Format (y <> "-" <> m <> "-" <> d)
+                  (Just date, Just slug)
+  _ -> (Nothing, Just slug)
+
 
 -- | Tags in org-roam look like: @#+roam_tags: tag1 tag2 "tag three"@
 -- I.e., they're space-delimited, and can contain spaces if quoted.
@@ -108,9 +125,9 @@ parseTags blocks =  viaNonEmpty head $ mapMaybe blockToTag blocks where
       && length (words blockText) < 2 -> Just $ map Tag (words blockText)
     _ -> Nothing
 
--- testReader :: IO ()
-testReader = do
-  let fp = "/home/jon/Code/neuron/guide-org/test.org" :: FilePath
-  testFile <- TIO.readFile fp
-  let result = parseOrg fp testFile
-  return result
+-- -- testReader :: IO ()
+-- testReader = do
+--   let fp = "/home/jon/Code/neuron/guide-org/test.org" :: FilePath
+--   testFile <- TIO.readFile fp
+--   let result = parseOrg fp testFile
+--   return result
